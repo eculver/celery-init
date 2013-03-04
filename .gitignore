@@ -1,0 +1,11 @@
+.DS_Store
+*.py[co]
+*.pid
+*.log
+*.swp
+._*
+.Spotlight-V100
+.Trashes
+celerybeat-schedule.db
+etc/celeryd.conf
+etc/celerybeat.conf

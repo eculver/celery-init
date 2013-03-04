@@ -1,0 +1,45 @@
+# Configuration for running celery workers within the context of a virtualenv
+
+
+# Virtualenv home, used for prefixing python executable
+VIRTENV_HOME="/path/to/virtualenvs/myapp"
+
+# For prefixing manage.py commands
+ENV_PYTHON="$VIRTENV_HOME/bin/python"
+
+# Change to project dir, same level as settings
+CELERYD_CHDIR="/path/to/myapp"
+
+# Required: path to celery executable. If ``CELERYCTL`` and ``CELERY_MULTI``
+# aren't defined, they are derived from this base path
+CELERY_BIN="$VIRTENV_HOME/bin/celery"
+
+# Required (for status): path to celeryctl executable
+# standalone celery
+# CELERYCTL="$VIRTENV_HOME/bin/celeryctl"
+# django-celery
+CELERYCTL="$ENV_PYTHON $CELERYD_CHDIR/manage.py celeryctl"
+
+# Required: command to run celery worker
+# standalone celery
+# CELERYD="-m celery worker -B"
+# django-celery
+CELERYD="manage.py celeryd_detach -B"
+
+# Top-level command for starting/stopping workers
+# standalone celery, not necessary if ``CELERY_BIN is defined
+# CELERYD_MULTI="$VIRTENV_HOME/bin/celeryd-multi"
+# django-celery
+CELERYD_MULTI="$ENV_PYTHON $CELERYD_CHDIR/manage.py celeryd_multi"
+
+# Optional
+# CELERYD_LOG_LEVEL="INFO"
+
+# Optional: using named nodes (instances of celery worker)
+# CELERYD_NODES="image_n video_n data_n"
+
+# Extra options for workers, ex. assign nodes and workers to queues
+# CELERYD_OPTS="-c:image_n 1 -c:video_n 1 -c:data_n 1 -Q:image_n images -Q:video_n videos -Q:data_n data"
+
+# Required (for django): name of project settings module
+export DJANGO_SETTINGS_MODULE="myapp.settings"

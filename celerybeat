@@ -1,0 +1,194 @@
+#!/bin/sh
+#
+# =========================================================
+#  celerybeat - Starts the Celery periodic task scheduler.
+# =========================================================
+#
+# See http://docs.celeryq.org/en/latest/cookbook/daemonizing.html#init-script-celerybeat
+#
+# celerybeat for rc.d usage
+# $Id$
+#
+# PROVIDE: celerybeat
+# REQUIRE: DAEMON
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf to enable celerybeat:
+#
+# celerybeat_enable (bool): Set it to "YES" to enable celerybeat.
+#   Default is "NO".
+# celerybeat_uid (int): Set the UID of the process to run with.
+#   Default is 80.
+# celery_gid (int):  Set the GID of the process to run with.
+#   Default is 80.
+# celerybeat_pidfile (path): Set the path to the celerybeat pid file.
+#   Default is /var/run/celerybeat.pid.
+# celerybeat_logfile (path): Set the path to the celerybeat log file.
+#   Default is /var/log/celerybeat.log.
+
+. /etc/rc.subr
+
+name="celerybeat"
+rcvar=celerybeat_enable
+
+load_rc_config $name
+
+: ${celerybeat_enable="NO"}
+: ${celerybeat_uid="80"}
+: ${celerybeat_gid="80"}
+: ${celerybeat_pidfile="/var/run/${name}.pid"}
+: ${celerybeat_logfile="/var/log/${name}.log"}
+
+CELERYBEAT_DEFAULTS=${CELERYBEAT_DEFAULTS:-"/usr/local/etc/celerybeat.conf"}
+
+if test -f /usr/local/etc/celeryd.conf; then
+    . /usr/local/etc/celeryd.conf
+fi
+
+if test -f /usr/local/etc/celerybeat.conf; then
+    . /usr/local/etc/celerybeat.conf
+fi
+
+CELERYBEAT_LOG_LEVEL=${CELERYBEAT_LOG_LEVEL:-"INFO"}
+
+export CELERY_LOADER
+
+CELERYBEAT_OPTS="$CELERYBEAT_OPTS -f $celerybeat_logfile -l $CELERYBEAT_LOG_LEVEL"
+
+if [ -n "$2" ]; then
+    CELERYBEAT_OPTS="$CELERYBEAT_OPTS $2"
+fi
+
+CELERYBEAT_LOG_DIR=`dirname $celerybeat_logfile`
+CELERYBEAT_PID_DIR=`dirname $celerybeat_pidfile`
+
+if [ ! -d "$CELERYBEAT_LOG_DIR" ]; then
+    mkdir -p $CELERYBEAT_LOG_DIR
+fi
+if [ ! -d "$CELERYBEAT_PID_DIR" ]; then
+    mkdir -p $CELERYBEAT_PID_DIR
+fi
+
+# Extra start-stop-daemon options, like user/group.
+if [ -n "$celerybeat_uid" ]; then
+    DAEMON_OPTS="$DAEMON_OPTS --uid $celerybeat_uid"
+    chown "$celerybeat_uid" $CELERYBEAT_LOG_DIR $CELERYBEAT_PID_DIR
+fi
+if [ -n "$celerybeat_gid" ]; then
+    DAEMON_OPTS="$DAEMON_OPTS --gid $celerybeat_gid"
+    chgrp "$celerybeat_gid" $CELERYBEAT_LOG_DIR $CELERYBEAT_PID_DIR
+fi
+
+CELERYBEAT_CHDIR=${CELERYBEAT_CHDIR:-$CELERYBEAT_CHDIR}
+if [ -n "$CELERYBEAT_CHDIR" ]; then
+    DAEMON_OPTS="$DAEMON_OPTS --workdir=$CELERYBEAT_CHDIR"
+fi
+
+check_dev_null() {
+    if [ ! -c /dev/null ]; then
+        echo "/dev/null is not a character device!"
+        exit 1
+    fi
+}
+
+ensure_dir() {
+    if [ -d "$1" ]; then
+        mkdir -p "$1"
+        chown ${celerybeat_uid}:$celerybeat_gid "$1"
+        chmod 02755 "$1"
+    fi
+}
+
+check_paths() {
+    ensure_dir "$(dirname $celerybeat_pidfile)"
+    ensure_dir "$(dirname $celerybeat_logfile)"
+}
+
+wait_pid () {
+    pid=$1
+    forever=1
+    i=0
+    while [ $forever -gt 0 ]; do
+        kill -0 $pid 1>/dev/null 2>&1
+        if [ $? -eq 1 ]; then
+            echo "OK"
+            forever=0
+        else
+            kill -TERM "$pid"
+            i=$((i + 1))
+            if [ $i -gt 60 ]; then
+                echo "ERROR"
+                echo "Timed out while stopping (30s)"
+                forever=0
+            else
+                sleep 0.5
+            fi
+        fi
+    done
+}
+
+start_precmd()
+{
+    echo "Starting celerybeat..."
+}
+
+stop_precmd()
+{
+    echo -n "Stopping celerybeat... "
+}
+
+restart_precmd()
+{
+    echo "Restarting celery periodic task scheduler"
+}
+
+# ----------------------------------------------------------------------------
+# Sub-command entrypoints
+# ----------------------------------------------------------------------------
+
+pidfile=${celerybeat_pidfile}
+start_cmd="${name}_start"
+start_precmd=start_precmd
+stop_cmd="${name}_stop"
+stop_precmd=stop_precmd
+sig_stop="INT"
+restart_cmd="${name}_restart"
+restart_precmd=restart_precmd
+status_cmd="${name}_status"
+extra_commands="restart status"
+procname="${name}"
+
+celerybeat_start()
+{
+    check_dev_null
+    check_paths
+    echo "$CELERYBEAT $CELERYBEAT_OPTS $DAEMON_OPTS --detach --pidfile=\"${celerybeat_pidfile}\""
+}
+
+celerybeat_stop()
+{
+    check_paths
+
+    if [ -f "${celerybeat_pidfile}" ]; then
+        wait_pid $(cat "${celerybeat_pidfile}")
+    else
+        echo "NOT RUNNING"
+    fi
+}
+
+celerybeat_restart()
+{
+    check_paths
+    stop_beat
+    check_dev_null
+    start_beat
+}
+
+celerybeat_status()
+{
+    echo "status..."
+}
+
+
+load_rc_config $name
+run_rc_command "$1"

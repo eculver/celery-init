@@ -1,0 +1,237 @@
+#!/bin/sh
+#
+# =========================================================
+#  celeryd - Starts the Celery worker daemons.
+# =========================================================
+#
+# celeryd for rc.d usage
+# $Id$
+#
+# PROVIDE: celeryd
+# REQUIRE: DAEMON
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf to enable celeryd:
+#
+# celeryd_enable (bool): Set it to "YES" to enable celeryd.
+#   Default is "NO".
+# celeryd_uid (int): Set the UID of the process to run with.
+#   Default is 80.
+# celery_gid (int):  Set the GID of the process to run with.
+#   Default is 80.
+# celeryd_pidfile (path): Set the path to the celeryd pid file.
+#   Default is /var/run/celeryd.pid.
+# celeryd_logfile (path): Set the path to the celeryd log file.
+#   Default is /var/log/celeryd.log.
+
+. /etc/rc.subr
+
+name="celeryd"
+rcvar=celeryd_enable
+
+load_rc_config $name
+
+: ${celeryd_enable="NO"}
+: ${celeryd_uid="80"}
+: ${celeryd_gid="80"}
+: ${celeryd_pidfile="/var/run/${name}.pid"}
+: ${celeryd_logfile="/var/log/${name}.log"}
+
+CELERY_DEFAULTS=${CELERY_DEFAULTS:-"/usr/local/etc/celeryd.conf"}
+
+test -f "$CELERY_DEFAULTS" && . "$CELERY_DEFAULTS"
+if [ -f "/usr/local/etc/celeryd.conf" ]; then
+    . /usr/local/etc/celeryd.conf
+fi
+
+# Sets --app argument for CELERY_BIN
+CELERY_APP_ARG=""
+if [ ! -z "$CELERY_APP" ]; then
+    CELERY_APP_ARG="--app=$CELERY_APP"
+fi
+
+# Set CELERY_CREATE_DIRS to always create log/pid dirs.
+CELERY_CREATE_DIRS=${CELERY_CREATE_DIRS:-0}
+CELERY_CREATE_RUNDIR=$CELERY_CREATE_DIRS
+CELERY_CREATE_LOGDIR=$CELERY_CREATE_DIRS
+
+if [ -z "$celeryd_pidfile" ]; then
+    CELERYD_PID_FILE="$celeryd_pidfile"
+    CELERY_CREATE_RUNDIR=1
+fi
+
+if [ -z "$celeryd_logfile" ]; then
+    CELERYD_LOG_FILE="$celeryd_logfile"
+    CELERY_CREATE_LOGDIR=1
+fi
+
+CELERYD_LOG_LEVEL=${CELERYD_LOG_LEVEL:-"INFO"}
+CELERY_BIN=${CELERY_BIN:-"celery"}
+CELERYD_MULTI=${CELERYD_MULTI:-"$CELERY_BIN multi"}
+CELERYCTL=${CELERYCTL:-"celeryctl"}
+CELERYD_NODES=${CELERYD_NODES:-"celery"}
+
+export CELERY_LOADER
+
+if [ -n "$2" ]; then
+    CELERYD_OPTS="$CELERYD_OPTS $2"
+fi
+
+CELERYD_LOG_DIR=`dirname ${celeryd_logfile}`
+CELERYD_PID_DIR=`dirname ${celeryd_pidfile}`
+
+# Extra start-stop-daemon options, like user/group.
+# if [ -n "$celeryd_uid" ]; then
+    # DAEMON_OPTS="$DAEMON_OPTS --uid=$celeryd_uid"
+# fi
+# if [ -n "$celeryd_gid" ]; then
+    # DAEMON_OPTS="$DAEMON_OPTS --gid=$celeryd_gid"
+# fi
+
+if [ -n "$CELERYD_CHDIR" ]; then
+    DAEMON_OPTS="$DAEMON_OPTS --workdir=$CELERYD_CHDIR"
+fi
+
+
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
+
+check_dev_null()
+{
+    if [ ! -c /dev/null ]; then
+        echo "/dev/null is not a character device!"
+        exit 1
+    fi
+}
+
+maybe_die()
+{
+    if [ $? -ne 0 ]; then
+        echo "Exiting: $* (errno $?)"
+        exit 77  # EX_NOPERM
+    fi
+}
+
+create_default_dir()
+{
+    if [ ! -d "$1" ]; then
+        echo "- Creating default directory: '$1'"
+        mkdir -p "$1"
+        maybe_die "Couldn't create directory $1"
+        echo "- Changing permissions of '$1' to 02755"
+        chmod 02755 "$1"
+        maybe_die "Couldn't change permissions for $1"
+        if [ -n "$celeryd_uid" ]; then
+            echo "- Changing owner of '$1' to '$celeryd_uid'"
+            chown "$celeryd_uid" "$1"
+            maybe_die "Couldn't change owner of $1"
+        fi
+        if [ -n "$celeryd_gid" ]; then
+            echo "- Changing group of '$1' to '$celery_gid'"
+            chgrp "$celeryd_gid" "$1"
+            maybe_die "Couldn't change group of $1"
+        fi
+    fi
+}
+
+check_paths()
+{
+    if [ $CELERY_CREATE_LOGDIR -eq 1 ]; then
+        create_default_dir "$CELERYD_LOG_DIR"
+    fi
+    if [ $CELERY_CREATE_RUNDIR -eq 1 ]; then
+        create_default_dir "$CELERYD_PID_DIR"
+    fi
+}
+
+create_paths()
+{
+    create_default_dir "$CELERYD_LOG_DIR"
+    create_default_dir "$CELERYD_PID_DIR"
+}
+
+
+stop_workers ()
+{
+    $CELERYD_MULTI stopwait $CELERYD_NODES --pidfile=${celeryd_pidfile}
+}
+
+
+start_workers ()
+{
+    $CELERYD_MULTI start $CELERYD_NODES $DAEMON_OPTS \
+        --pidfile=${celeryd_pidfile} \
+        --logfile=${celeryd_logfile} \
+        --loglevel=$CELERYD_LOG_LEVEL \
+        --cmd="$CELERYD" \
+        $CELERY_APP_ARG \
+        $CELERYD_OPTS
+}
+
+
+restart_workers ()
+{
+    $CELERYD_MULTI restart $CELERYD_NODES $DAEMON_OPTS \
+        --pidfile=${celeryd_pidfile} \
+        --logfile=${celeryd_logfile} \
+        --loglevel=$CELERYD_LOG_LEVEL \
+        --cmd="$CELERYD" \
+        $CELERY_APP_ARG \
+        $CELERYD_OPTS
+}
+
+reload_precmd()
+{
+    echo "Reloading ${name}..."
+}
+
+# ----------------------------------------------------------------------------
+# Sub-command entrypoints
+# ----------------------------------------------------------------------------
+
+pidfile=${celeryd_pidfile}
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+sig_stop="INT"
+reload_cmd="${name}_reload"
+reload_precmd=reload_precmd
+status_cmd="${name}_status"
+extra_commands="reload restart status"
+procname="${name}"
+
+celeryd_start()
+{
+    check_dev_null
+    check_paths
+    start_workers
+}
+
+celeryd_stop()
+{
+    check_dev_null
+    check_paths
+    stop_workers
+}
+
+celeryd_restart()
+{
+    check_dev_null
+    check_paths
+    restart_workers
+}
+
+celeryd_reload()
+{
+    $CELERYCTL pool_restart
+}
+
+celeryd_status()
+{
+    $CELERYCTL status
+    $CELERYCTL inspect registered
+}
+
+
+load_rc_config $name
+run_rc_command "$1"

@@ -1,0 +1,24 @@
+# Configuration for running celery periodic task scheduler within the context
+# of a virtualenv.
+
+# Required (for virtualenv): Virtualenv home, used for prefixing python
+# executable
+VIRTENV_HOME="/path/to/virtualenvs/myapp"
+
+# Required (for virtualenv): Prefix for manage.py commands
+ENV_PYTHON="$VIRTENV_HOME/bin/python"
+
+# Change to project dir, same level as settings
+CELERYBEAT_CHDIR="/path/to/myapp"
+
+# Path to celerybeat
+# standalone celery
+# CELERYBEAT="$VIRTENV_HOME/bin/celerybeat"
+# django-celery
+CELERYBEAT="$ENV_PYTHON $CELERYBEAT_CHDIR/manage.py celerybeat"
+
+# Extra arguments to celerybeat
+# CELERYBEAT_OPTS="--schedule=/var/run/celerybeat-schedule"
+
+# Required (for django): name of project settings module
+export DJANGO_SETTINGS_MODULE="myapp.settings"
